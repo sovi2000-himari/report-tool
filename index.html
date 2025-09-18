@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>レポート→レベル上げ人数 計算ツール</title>
+  <style>
+    body { font-family: sans-serif; background: #f8fafc; color: #111; margin: 1rem; }
+    h1 { font-size: 1.2rem; margin-bottom: 1rem; }
+    table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
+    th, td { border: 1px solid #ccc; padding: 4px 6px; font-size: 0.9rem; }
+    input { width: 100%; box-sizing: border-box; }
+    .grid { display: grid; gap: 1rem; margin-top: 1rem; }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    .stat { font-weight: bold; font-size: 1.1rem; }
+  </style>
+</head>
+<body>
+  <h1>レポート→レベル上げ人数 計算ツール</h1>
+
+  <div class="card">
+    <h2>1) レベル設定</h2>
+    開始Lv: <input type="number" id="fromLv" value="1" min="1" max="90"><br>
+    目標Lv: <input type="number" id="toLv" value="90" min="2" max="90"><br>
+    安全係数(%): <input type="number" id="overhead" value="0" min="0">
+  </div>
+
+  <div class="card">
+    <h2>2) レポート在庫</h2>
+    <table id="items">
+      <thead><tr><th>名前</th><th>XP</th><th>所持数</th><th>合計XP</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <button onclick="addRow()">行を追加</button>
+  </div>
+
+  <div class="card">
+    <h2>3) 結果</h2>
+    <div>合計在庫XP: <span id="totalXP">0</span></div>
+    <div>1人あたり必要XP: <span id="needXP">0</span></div>
+    <div>上げられる人数(最大): <span id="maxStudents">0</span></div>
+    <div>余りXP: <span id="leftoverXP">0</span></div>
+  </div>
+
+<script>
+const LEVEL_XP = [
+  10,25,40,55,70,75,80,90,95,105,
+  115,130,145,160,175,185,200,215,230,385,
+  425,480,535,580,635,785,845,895,925,975,
+  1010,1095,1165,1250,1335,1425,1545,1625,1685,1735,
+  1800,1975,2165,2370,2585,2815,3065,3340,3645,3985,
+  4365,4790,5265,5795,6385,7040,7765,8565,9445,10410,
+  11465,12615,13865,15220,16685,18265,19965,21790,23745,25700,
+  27655,29610,31565,33520,35475,37430,
+  39385,39385,39385,39385,39385,39385,39385,
+  43295,52265,69200,84420,102990,125645
+];
+
+const DEFAULT_ITEMS = [
+  {name:"初級レポート", xp:50, count:0},
+  {name:"中級レポート", xp:500, count:0},
+  {name:"上級レポート", xp:2000, count:0},
+  {name:"最上級レポート", xp:10000, count:0},
+];
+
+const tbody = document.querySelector("#items tbody");
+
+function addRow(item={name:"新しいレポート", xp:0, count:0}) {
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input value="${item.name}"></td>
+    <td><input type="number" value="${item.xp}"></td>
+    <td><input type="number" value="${item.count}"></td>
+    <td class="sum">0</td>
+  `;
+  tbody.appendChild(tr);
+  tr.querySelectorAll("input").forEach(i=> i.addEventListener("input", update));
+}
+
+DEFAULT_ITEMS.forEach(addRow);
+
+function update() {
+  const rows = [...tbody.querySelectorAll("tr")];
+  let totalXP = 0;
+  rows.forEach(tr=>{
+    const [name,xp,count] = tr.querySelectorAll("input");
+    const xpVal = Number(xp.value)||0;
+    const ctVal = Number(count.value)||0;
+    const sum = xpVal*ctVal;
+    tr.querySelector(".sum").textContent = sum;
+    totalXP += sum;
+  });
+
+  const fromLv = Number(document.getElementById("fromLv").value);
+  const toLv = Number(document.getElementById("toLv").value);
+  const overhead = Number(document.getElementById("overhead").value);
+
+  const needXP = LEVEL_XP.slice(fromLv-1, toLv-1).reduce((a,b)=>a+b,0);
+  const needXPAdj = Math.ceil(needXP*(1+overhead/100));
+  const maxStudents = needXPAdj>0 ? Math.floor(totalXP/needXPAdj):0;
+  const leftover = totalXP - maxStudents*needXPAdj;
+
+  document.getElementById("totalXP").textContent = totalXP;
+  document.getElementById("needXP").textContent = needXPAdj + ` (基準:${needXP})`;
+  document.getElementById("maxStudents").textContent = maxStudents;
+  document.getElementById("leftoverXP").textContent = leftover;
+}
+
+document.querySelectorAll(\"input\").forEach(i=>i.addEventListener(\"input\",update));
+update();
+</script>
+</body>
+</html>
