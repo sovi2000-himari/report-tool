@@ -6,12 +6,14 @@
   <title>レポート→レベル上げ人数 計算ツール</title>
   <style>
     body { font-family: sans-serif; background: #f8fafc; color: #111; margin: 1rem; }
-    h1 { font-size: 1.2rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: 1rem; }
+    h2 { font-size: 1.1rem; margin: 0.5rem 0; }
     table { border-collapse: collapse; width: 100%; margin-top: 0.5rem; }
-    th, td { border: 1px solid #ccc; padding: 4px 6px; font-size: 0.9rem; }
+    th, td { border: 1px solid #ccc; padding: 4px 6px; font-size: 0.9rem; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
     input { width: 100%; box-sizing: border-box; }
-    .grid { display: grid; gap: 1rem; margin-top: 1rem; }
-    .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+    button { margin-top: 0.5rem; padding: 4px 8px; }
+    .card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
     .stat { font-weight: bold; font-size: 1.1rem; }
   </style>
 </head>
@@ -22,13 +24,16 @@
     <h2>1) レベル設定</h2>
     開始Lv: <input type="number" id="fromLv" value="1" min="1" max="90"><br>
     目標Lv: <input type="number" id="toLv" value="90" min="2" max="90"><br>
-    安全係数(%): <input type="number" id="overhead" value="0" min="0">
+    安全係数(%): <input type="number" id="overhead" value="0" min="0"><br>
+    <button onclick="resetAll()">初期化</button>
   </div>
 
   <div class="card">
     <h2>2) レポート在庫</h2>
     <table id="items">
-      <thead><tr><th>名前</th><th>XP</th><th>所持数</th><th>合計XP</th></tr></thead>
+      <thead>
+        <tr><th>名前</th><th>XP</th><th>所持数</th><th>合計XP</th><th></th></tr>
+      </thead>
       <tbody></tbody>
     </table>
     <button onclick="addRow()">行を追加</button>
@@ -37,7 +42,8 @@
   <div class="card">
     <h2>3) 結果</h2>
     <div>合計在庫XP: <span id="totalXP">0</span></div>
-    <div>1人あたり必要XP: <span id="needXP">0</span></div>
+    <div>必要XP(基準): <span id="needXPBase">0</span></div>
+    <div>必要XP(安全係数込): <span id="needXP">0</span></div>
     <div>上げられる人数(最大): <span id="maxStudents">0</span></div>
     <div>余りXP: <span id="leftoverXP">0</span></div>
   </div>
@@ -63,7 +69,36 @@ const DEFAULT_ITEMS = [
   {name:"最上級レポート", xp:10000, count:0},
 ];
 
+const STORAGE_KEY = "report_level_tool_html_v1";
 const tbody = document.querySelector("#items tbody");
+
+function saveState() {
+  const rows = [...tbody.querySelectorAll("tr")].map(tr=>{
+    const [name,xp,count] = tr.querySelectorAll("input");
+    return {name:name.value, xp:Number(xp.value)||0, count:Number(count.value)||0};
+  });
+  const state = {
+    items: rows,
+    fromLv: Number(document.getElementById("fromLv").value),
+    toLv: Number(document.getElementById("toLv").value),
+    overhead: Number(document.getElementById("overhead").value),
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function loadState() {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY)||"null");
+  if(saved && saved.items) {
+    tbody.innerHTML = "";
+    saved.items.forEach(addRow);
+    document.getElementById("fromLv").value = saved.fromLv;
+    document.getElementById("toLv").value = saved.toLv;
+    document.getElementById("overhead").value = saved.overhead;
+  } else {
+    DEFAULT_ITEMS.forEach(addRow);
+  }
+  update();
+}
 
 function addRow(item={name:"新しいレポート", xp:0, count:0}) {
   const tr = document.createElement("tr");
@@ -72,12 +107,22 @@ function addRow(item={name:"新しいレポート", xp:0, count:0}) {
     <td><input type="number" value="${item.xp}"></td>
     <td><input type="number" value="${item.count}"></td>
     <td class="sum">0</td>
+    <td><button onclick="this.closest('tr').remove(); update(); saveState();">削除</button></td>
   `;
   tbody.appendChild(tr);
-  tr.querySelectorAll("input").forEach(i=> i.addEventListener("input", update));
+  tr.querySelectorAll("input").forEach(i=> i.addEventListener("input", ()=>{update(); saveState();}));
 }
 
-DEFAULT_ITEMS.forEach(addRow);
+function resetAll() {
+  if(!confirm("初期化しますか？")) return;
+  localStorage.removeItem(STORAGE_KEY);
+  tbody.innerHTML="";
+  DEFAULT_ITEMS.forEach(addRow);
+  document.getElementById("fromLv").value=1;
+  document.getElementById("toLv").value=90;
+  document.getElementById("overhead").value=0;
+  update();
+}
 
 function update() {
   const rows = [...tbody.querySelectorAll("tr")];
@@ -95,19 +140,23 @@ function update() {
   const toLv = Number(document.getElementById("toLv").value);
   const overhead = Number(document.getElementById("overhead").value);
 
-  const needXP = LEVEL_XP.slice(fromLv-1, toLv-1).reduce((a,b)=>a+b,0);
-  const needXPAdj = Math.ceil(needXP*(1+overhead/100));
+  const needXPBase = LEVEL_XP.slice(fromLv-1, toLv-1).reduce((a,b)=>a+b,0);
+  const needXPAdj = Math.ceil(needXPBase*(1+overhead/100));
   const maxStudents = needXPAdj>0 ? Math.floor(totalXP/needXPAdj):0;
   const leftover = totalXP - maxStudents*needXPAdj;
 
   document.getElementById("totalXP").textContent = totalXP;
-  document.getElementById("needXP").textContent = needXPAdj + ` (基準:${needXP})`;
+  document.getElementById("needXPBase").textContent = needXPBase;
+  document.getElementById("needXP").textContent = needXPAdj;
   document.getElementById("maxStudents").textContent = maxStudents;
   document.getElementById("leftoverXP").textContent = leftover;
 }
 
-document.querySelectorAll(\"input\").forEach(i=>i.addEventListener(\"input\",update));
-update();
+document.getElementById("fromLv").addEventListener("input", ()=>{update(); saveState();});
+document.getElementById("toLv").addEventListener("input", ()=>{update(); saveState();});
+document.getElementById("overhead").addEventListener("input", ()=>{update(); saveState();});
+
+loadState();
 </script>
 </body>
 </html>
